@@ -28,6 +28,33 @@ def sample_data(x_np, y_np, max_points, method):
     return x_np[indices], y_np[indices], True
 
 
+def compute_linear_regression(x_np, y_np):
+    if len(x_np) < 2:
+        return None, None, None, None, None
+
+    valid_mask = np.isfinite(x_np) & np.isfinite(y_np)
+    x_valid = x_np[valid_mask]
+    y_valid = y_np[valid_mask]
+
+    if len(x_valid) < 2:
+        return None, None, None, None, None
+
+    slope, intercept = np.polyfit(x_valid, y_valid, 1)
+    y_pred = slope * x_valid + intercept
+    ss_res = np.sum((y_valid - y_pred) ** 2)
+    ss_tot = np.sum((y_valid - np.mean(y_valid)) ** 2)
+    r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0.0
+
+    return slope, intercept, r_squared, np.min(x_valid), np.max(x_valid)
+
+
+def build_trend_label(slope, intercept, r_squared):
+    sign = '+' if intercept >= 0 else '-'
+    abs_intercept = abs(intercept)
+    formula = f'y = {slope:.4f}x {sign} {abs_intercept:.4f}'
+    return f'{formula} (R²={r_squared:.4f})'
+
+
 @app.route('/scatter', methods=['POST'])
 def generate_scatter():
     try:
@@ -66,6 +93,12 @@ def generate_scatter():
         dpi = data.get('dpi', 100)
         max_points = data.get('max_points', DEFAULT_MAX_POINTS)
         sample_method = data.get('sample_method', 'random')
+        show_trendline = data.get('show_trendline', False)
+        trendline_color = data.get('trendline_color', '#d62728')
+        trendline_width = data.get('trendline_width', 2)
+        trendline_alpha = data.get('trendline_alpha', 0.9)
+        show_formula = data.get('show_formula', False)
+        regression_use_original = data.get('regression_use_original', True)
 
         if not isinstance(max_points, int) or max_points < 1:
             return jsonify({'error': '"max_points" 必须为正整数'}), 400
@@ -73,16 +106,46 @@ def generate_scatter():
         if sample_method not in VALID_SAMPLE_METHODS:
             return jsonify({'error': f'"sample_method" 必须为 {VALID_SAMPLE_METHODS} 之一'}), 400
 
+        if not isinstance(trendline_width, (int, float)) or trendline_width <= 0:
+            return jsonify({'error': '"trendline_width" 必须为正数'}), 400
+
+        if not isinstance(trendline_alpha, (int, float)) or not (0 < trendline_alpha <= 1):
+            return jsonify({'error': '"trendline_alpha" 必须在 (0, 1] 范围内'}), 400
+
         original_count = len(x_np)
         x_plot, y_plot, sampled = sample_data(x_np, y_np, max_points, sample_method)
 
         fig, ax = plt.subplots(figsize=(8, 6))
-        ax.scatter(x_plot, y_plot, c=color, s=size, alpha=alpha, edgecolors='white', linewidth=0.5)
+        ax.scatter(x_plot, y_plot, c=color, s=size, alpha=alpha, edgecolors='white', linewidth=0.5, zorder=2)
+
+        trend_info = None
+        if show_trendline:
+            if regression_use_original:
+                slope, intercept, r_squared, x_min, x_max = compute_linear_regression(x_np, y_np)
+            else:
+                slope, intercept, r_squared, x_min, x_max = compute_linear_regression(x_plot, y_plot)
+
+            if slope is not None:
+                x_line = np.linspace(x_min, x_max, 200)
+                y_line = slope * x_line + intercept
+                trend_label = build_trend_label(slope, intercept, r_squared)
+                ax.plot(x_line, y_line, color=trendline_color, linewidth=trendline_width,
+                        alpha=trendline_alpha, linestyle='-', zorder=3, label=trend_label)
+
+                if show_formula:
+                    ax.legend(loc='best', fontsize=10, framealpha=0.8)
+
+                trend_info = {
+                    'slope': float(slope),
+                    'intercept': float(intercept),
+                    'r_squared': float(r_squared)
+                }
+
         ax.set_xlabel(xlabel, fontsize=12)
         ax.set_ylabel(ylabel, fontsize=12)
         title_display = f'{title}' if not sampled else f'{title}（采样 {len(x_plot)}/{original_count}）'
         ax.set_title(title_display, fontsize=14, fontweight='bold')
-        ax.grid(True, linestyle='--', alpha=0.6)
+        ax.grid(True, linestyle='--', alpha=0.6, zorder=1)
         fig.tight_layout()
 
         buf = io.BytesIO()
@@ -95,6 +158,10 @@ def generate_scatter():
             response.headers['X-Sampled'] = 'true'
             response.headers['X-Original-Count'] = str(original_count)
             response.headers['X-Sampled-Count'] = str(len(x_plot))
+        if trend_info is not None:
+            response.headers['X-Trend-Slope'] = f"{trend_info['slope']:.8f}"
+            response.headers['X-Trend-Intercept'] = f"{trend_info['intercept']:.8f}"
+            response.headers['X-Trend-R2'] = f"{trend_info['r_squared']:.8f}"
         return response
 
     except Exception as e:

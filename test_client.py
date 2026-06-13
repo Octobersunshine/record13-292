@@ -139,6 +139,94 @@ def test_scatter_small_no_sampling():
     return resp.status_code == 200
 
 
+def test_trendline_with_formula():
+    url = 'http://localhost:5000/scatter'
+    n = 30
+    data = {
+        'x': [i for i in range(n)],
+        'y': [2.1 * i + 3.5 + random.uniform(-4, 4) for i in range(n)],
+        'title': '带趋势线和公式的散点图',
+        'xlabel': '广告投入',
+        'ylabel': '销售额',
+        'show_trendline': True,
+        'show_formula': True,
+        'trendline_color': '#2ca02c',
+        'trendline_width': 2.5
+    }
+    resp = requests.post(url, json=data)
+    print(f'趋势线+公式: {resp.status_code}')
+    if resp.status_code == 200:
+        print(f'  X-Trend-Slope: {resp.headers.get("X-Trend-Slope")}')
+        print(f'  X-Trend-Intercept: {resp.headers.get("X-Trend-Intercept")}')
+        print(f'  X-Trend-R2: {resp.headers.get("X-Trend-R2")}')
+        with open('scatter_trendline_formula.png', 'wb') as f:
+            f.write(resp.content)
+        print('  已保存到 scatter_trendline_formula.png')
+        return True
+    else:
+        print(f'  错误: {resp.json()}')
+        return False
+
+
+def test_trendline_large_data_original_regression():
+    url = 'http://localhost:5000/scatter'
+    n = 80000
+    data = {
+        'x': [random.uniform(0, 50) for _ in range(n)],
+        'y': [],
+        'title': '8万点 用原始数据回归',
+        'xlabel': 'X',
+        'ylabel': 'Y',
+        'max_points': 3000,
+        'sample_method': 'random',
+        'show_trendline': True,
+        'show_formula': True,
+        'regression_use_original': True,
+        'trendline_color': '#9467bd',
+        'color': '#1f77b4'
+    }
+    for xi in data['x']:
+        data['y'].append(-0.6 * xi + 50.0 + random.uniform(-8, 8))
+
+    import time
+    start = time.time()
+    resp = requests.post(url, json=data)
+    elapsed = time.time() - start
+    print(f'大数据+趋势线(原始回归): {resp.status_code}, 耗时={elapsed:.2f}s')
+    if resp.status_code == 200:
+        print(f'  X-Sampled: {resp.headers.get("X-Sampled")}')
+        print(f'  X-Trend-Slope: {resp.headers.get("X-Trend-Slope")}')
+        print(f'  X-Trend-R2: {resp.headers.get("X-Trend-R2")}')
+        with open('scatter_large_trend_original.png', 'wb') as f:
+            f.write(resp.content)
+        print('  已保存到 scatter_large_trend_original.png')
+        return True
+    else:
+        print(f'  错误: {resp.json()}')
+        return False
+
+
+def test_trendline_sampled_regression():
+    url = 'http://localhost:5000/scatter'
+    n = 100
+    data = {
+        'x': [i * 0.5 for i in range(n)],
+        'y': [0.8 * (i * 0.5) ** 1.2 + random.uniform(-5, 5) for i in range(n)],
+        'title': '无趋势线（开关关闭）',
+        'xlabel': 'X',
+        'ylabel': 'Y',
+        'show_trendline': False
+    }
+    resp = requests.post(url, json=data)
+    print(f'无趋势线(开关关闭): {resp.status_code}, X-Trend-Slope={resp.headers.get("X-Trend-Slope", "无")}')
+    if resp.status_code == 200:
+        with open('scatter_no_trendline.png', 'wb') as f:
+            f.write(resp.content)
+        print('  已保存到 scatter_no_trendline.png')
+        return True
+    return False
+
+
 if __name__ == '__main__':
     print('=' * 50)
     print('开始测试散点图服务...')
@@ -158,6 +246,12 @@ if __name__ == '__main__':
         test_scatter_large_random()
         print()
         test_scatter_large_equidistant()
+        print()
+        test_trendline_with_formula()
+        print()
+        test_trendline_large_data_original_regression()
+        print()
+        test_trendline_sampled_regression()
         print()
         print('=' * 50)
         print('测试完成！')
