@@ -65,6 +65,80 @@ def test_scatter_validation():
     return resp.status_code == 400
 
 
+def test_scatter_large_random():
+    url = 'http://localhost:5000/scatter'
+    n = 100000
+    data = {
+        'x': [random.uniform(0, 100) for _ in range(n)],
+        'y': [random.uniform(0, 100) for _ in range(n)],
+        'title': '10万点随机采样',
+        'xlabel': 'X',
+        'ylabel': 'Y',
+        'max_points': 5000,
+        'sample_method': 'random'
+    }
+    import time
+    start = time.time()
+    resp = requests.post(url, json=data)
+    elapsed = time.time() - start
+    print(f'大数据量 (random采样): {resp.status_code}, 耗时={elapsed:.2f}s')
+    if resp.status_code == 200:
+        print(f'  X-Sampled: {resp.headers.get("X-Sampled")}')
+        print(f'  X-Original-Count: {resp.headers.get("X-Original-Count")}')
+        print(f'  X-Sampled-Count: {resp.headers.get("X-Sampled-Count")}')
+        with open('scatter_large_random.png', 'wb') as f:
+            f.write(resp.content)
+        print('  已保存到 scatter_large_random.png')
+        return True
+    else:
+        print(f'  错误: {resp.json()}')
+        return False
+
+
+def test_scatter_large_equidistant():
+    url = 'http://localhost:5000/scatter'
+    n = 50000
+    data = {
+        'x': [i * 0.001 for i in range(n)],
+        'y': [i * 0.001 + random.uniform(-0.5, 0.5) for i in range(n)],
+        'title': '5万点等距采样',
+        'xlabel': 'X',
+        'ylabel': 'Y',
+        'max_points': 3000,
+        'sample_method': 'equidistant'
+    }
+    import time
+    start = time.time()
+    resp = requests.post(url, json=data)
+    elapsed = time.time() - start
+    print(f'大数据量 (equidistant采样): {resp.status_code}, 耗时={elapsed:.2f}s')
+    if resp.status_code == 200:
+        print(f'  X-Sampled: {resp.headers.get("X-Sampled")}')
+        print(f'  X-Original-Count: {resp.headers.get("X-Original-Count")}')
+        print(f'  X-Sampled-Count: {resp.headers.get("X-Sampled-Count")}')
+        with open('scatter_large_equidistant.png', 'wb') as f:
+            f.write(resp.content)
+        print('  已保存到 scatter_large_equidistant.png')
+        return True
+    else:
+        print(f'  错误: {resp.json()}')
+        return False
+
+
+def test_scatter_small_no_sampling():
+    url = 'http://localhost:5000/scatter'
+    data = {
+        'x': list(range(50)),
+        'y': [random.uniform(0, 10) for _ in range(50)],
+        'title': '小数据不采样',
+        'max_points': 5000,
+        'sample_method': 'random'
+    }
+    resp = requests.post(url, json=data)
+    print(f'小数据量 (无采样): {resp.status_code}, X-Sampled={resp.headers.get("X-Sampled", "未采样")}')
+    return resp.status_code == 200
+
+
 if __name__ == '__main__':
     print('=' * 50)
     print('开始测试散点图服务...')
@@ -78,6 +152,12 @@ if __name__ == '__main__':
         test_scatter_random()
         print()
         test_scatter_validation()
+        print()
+        test_scatter_small_no_sampling()
+        print()
+        test_scatter_large_random()
+        print()
+        test_scatter_large_equidistant()
         print()
         print('=' * 50)
         print('测试完成！')
